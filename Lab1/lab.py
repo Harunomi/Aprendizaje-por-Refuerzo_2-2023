@@ -7,9 +7,8 @@ import numpy as np
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, width, height):
-        self.width = width  # The size of the square grid
-        self.height = height
+    def __init__(self, render_mode=None, size=5):
+        self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
 
         # Observations are dictionaries with the agent's and the target's location.
