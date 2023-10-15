@@ -12,17 +12,23 @@ def mult(x,y):
 class RectangularEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, width, height, render_mode = None):
+    def __init__(self, width, height,boxes, render_mode = None):
         super(RectangularEnv, self).__init__()
 
         self.width = width
         self.height = height
+        if boxes < 1:
+            print("El numero de cajas debe ser mayor que 1.")
+            return 
+        self.boxes = boxes
+        
+        
         m = mult(self.width, self.height)
         if(self.width > self.height):
-            self.window_height = 512
+            self.window_height = 360
             self.window_width = m * self.window_height
         else:
-            self.window_width = 512
+            self.window_width = 360
             self.window_height = m * self.window_width
             
         # Define la forma del espacio de observación (en este caso, una imagen binaria)
@@ -43,7 +49,14 @@ class RectangularEnv(gym.Env):
             3: np.array([0, -1]),
             4: np.array([0, 0]),
         }
-        #0 = down, 1 = right, 2= up, 3 = left, 4 = bomb, 
+        self._action_to_names = {
+            0: 'RIGHT',
+            1: 'DOWN',
+            2: 'LEFT',
+            3: 'UP',
+            4: 'BOMB',
+        }
+        #0 = down, 1 = right, 2= left, 3 = up, 4 = bomb, 
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -56,6 +69,12 @@ class RectangularEnv(gym.Env):
         #self.state = np.zeros((width, height), dtype=np.float32)
 
     
+    def _tile_is_free(self,direction):
+        movement = self._agent_location + direction
+        if (np.any(np.all(movement == self.list_boxes,axis=1))):
+            print("ESTOY CHOCANDO LOL")
+            return False
+        return True
 
     def _get_obs(self):
         return {"agent": self._agent_location, "target": self._target_location}
@@ -74,6 +93,16 @@ class RectangularEnv(gym.Env):
         x = self.np_random.integers(0, self.width, dtype=int)
         y = self.np_random.integers(0, self.height, dtype=int)
         self._agent_location = np.array([x,y])
+        self.list_boxes = []
+        i=0
+        while i < self.boxes:
+            box_pos = np.array([self.np_random.integers(0,self.width-1,dtype=int),self.np_random.integers(0,self.height-1,dtype=int)])
+            if self.list_boxes == []:
+                self.list_boxes.append(box_pos)
+                i+=1
+            elif not np.any(np.all(box_pos == self.list_boxes, axis=1)):
+                self.list_boxes.append(box_pos)
+                i+=1
 
 
         # We will sample the target's location randomly until it does not coincide with the agent's location
@@ -94,17 +123,17 @@ class RectangularEnv(gym.Env):
     def step(self, action):
         # Map the action (element of {0,1,2,3}) to the direction we walk in
         direction = self._action_to_direction[action]
-        print(direction)
+        print(self._action_to_names[action])
         # We use `np.clip` to make sure we don't leave the grid
         x,y = self._agent_location + direction
 
         print(x,y)
-
-        if action == 3 or action == 1:
+        #0 = down, 1 = right, 2= left, 3 = up, 4 = bomb, 
+        if (action == 2 or action == 0) and self._tile_is_free(direction):
             self._agent_location = np.clip(
                 self._agent_location + direction, 0, self.width - 1
             )
-        elif action == 0 or action == 2:
+        elif (action == 1 or action == 3) and self._tile_is_free(direction):
             self._agent_location = np.clip(
                 self._agent_location + direction, 0, self.height - 1
             )
@@ -159,6 +188,17 @@ class RectangularEnv(gym.Env):
             pix_square_size / 3,
         )
 
+        # Now we draw the destructible boxes
+        for i in range(len(self.list_boxes)):
+            pygame.draw.rect(
+                canvas,
+                (94, 82, 60),
+                pygame.Rect(
+                    (self.list_boxes[i] * pix_square_size),
+                    (pix_square_size, pix_square_size),
+                ),
+            )
+
         # Finally, add some gridlines
         for x in range(self.height + 1):
             pygame.draw.line(
@@ -194,7 +234,7 @@ class RectangularEnv(gym.Env):
 
 
 # Ejemplo de uso
-env = RectangularEnv(36,12,'human')
+env = RectangularEnv(12,12,25,'human')
 
 for episode in range(100):
 
