@@ -9,9 +9,10 @@ class Item(object):
         self.pos = pos
 
 class Box(Item):
-    def __init__(self,pos,breakable):
+    def __init__(self,pos,breakable,target):
          super(Box,self).__init__(pos)
          self.isBreakable = breakable
+         self.isTarget = target
 
     def get_state(self):
         return (self.x, self.y, self.timer)
@@ -53,6 +54,7 @@ class RectangularEnv(gym.Env):
         self.active_explosion = 0
         self.active_bomb = 0
         self.list_boxes = []
+        self.list_boxes_breakable = []
         
         
         m = mult(self.width, self.height)
@@ -121,20 +123,12 @@ class RectangularEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
-        # Choose the agent's location uniformly at random
-        x = self.np_random.integers(0, self.width, dtype=int) # HAY QUE CAMBIARLO
-        y = self.np_random.integers(0, self.height, dtype=int)
-        self._agent_location = np.array([x,y])
 
         # generamos las cajas irrompibles
         for i in range(self.width):
             for j in range(self.height):
                 if ((i % 2 == 1) and (j % 2 == 1)):
-                    self.list_boxes.append(Box(np.array([i,j]),False))
-        
-        for i in range(self.boxes):
-            print(self.list_boxes[i].pos)
-
+                    self.list_boxes.append(Box(np.array([i,j]),False,False))
         
         # generamos las cajas rompibles
         i=0
@@ -142,16 +136,26 @@ class RectangularEnv(gym.Env):
             box_pos = np.array([self.np_random.integers(0,self.width-1,dtype=int),self.np_random.integers(0,self.height-1,dtype=int)])
             for j in range(len(self.list_boxes)):
                 if not (exist(self.list_boxes,box_pos)):
-                    self.list_boxes.append(Box(box_pos,True))
+                    self.list_boxes.append(Box(box_pos,True,False))
+                    self.list_boxes_breakable.append(Box(box_pos,True,False))
                     i+=1
 
+        # Choose the agent's location uniformly at random
+        aux = True
+        while (aux):
+            x = self.np_random.integers(0, self.width, dtype=int) # HAY QUE CAMBIARLO
+            y = self.np_random.integers(0, self.height, dtype=int)
+            if not (exist(self.list_boxes,np.array([x,y]))):
+                aux = False
+                self._agent_location = np.array([x,y])
+                
+        target_box = self.list_boxes_breakable[self.np_random.integers(0,len(self.list_boxes_breakable),dtype=int)]
 
-        # We will sample the target's location randomly until it does not coincide with the agent's location
-        self._target_location = self._agent_location
-        while np.array_equal(self._target_location, self._agent_location):
-            m = self.np_random.integers(0, self.width, dtype=int)
-            n = self.np_random.integers(0, self.height, dtype=int)
-            self._target_location = np.array([m,n])
+        for i in range(len(self.list_boxes)):
+            if (np.array_equal(target_box.pos,self.list_boxes[i].pos)):
+                self.list_boxes[i].isTarget = True
+                self._target_location = target_box.pos
+
 
         observation = self._get_obs()
         info = self._get_info()
@@ -198,6 +202,7 @@ class RectangularEnv(gym.Env):
         if self.window is None and self.render_mode == "human":
             pygame.init()
             pygame.display.init()
+            pygame.display.set_caption("Mi Juego Genial")
             self.window = pygame.display.set_mode((self.window_width, self.window_height))
         if self.clock is None and self.render_mode == "human":
             self.clock = pygame.time.Clock()
@@ -285,7 +290,7 @@ class RectangularEnv(gym.Env):
 
 
 # Ejemplo de uso
-env = RectangularEnv(12,12,2,'human')
+env = RectangularEnv(3,4,2,'human')
 
 for episode in range(100):
 
