@@ -10,13 +10,19 @@ class Item(object):
 
 class Box(Item):
     def __init__(self,pos,breakable,target):
-         super(Box,self).__init__(pos)
-         self.isBreakable = breakable
-         self.isTarget = target
+        super(Box,self).__init__(pos)
+        self.isBreakable = breakable
+        self.isTarget = target
 
     def get_state(self):
         return (self.x, self.y, self.timer)
-
+    
+class Enemy(Item):
+    def __init__(self,pos,orientation,way,isAlive):
+        super(Enemy,self).__init__(pos)
+        self.orientation = orientation
+        self.way = way
+        self.isAlive = isAlive
 
 '''
 class Bomb(Item):
@@ -42,7 +48,7 @@ def exist(list,pos):
 class RectangularEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, width, height,boxes, render_mode = None):
+    def __init__(self, width, height,boxes,enemies, render_mode = None):
         super(RectangularEnv, self).__init__()
 
         self.width = width
@@ -50,13 +56,14 @@ class RectangularEnv(gym.Env):
         if boxes < 1:
             print("El numero de cajas debe ser mayor que 1.")
             return 
-        self.boxes = boxes
         self.active_explosion = 0
         self.active_bomb = 0
-        self.list_boxes = []
-        self.list_boxes_breakable = []
-        
-        
+        self.list_boxes = [] # lista para las cajas rompibles e irrompibles
+        self.boxes = boxes # total de cajas rompibles
+        self.list_boxes_breakable = [] # lista para las cajas rompibles 
+        self.list_enemies = [] # lista que contendra a los enemigos
+        self.enemies = enemies # total de enemigos entregados por el constructor 
+
         m = mult(self.width, self.height)
         if(self.width > self.height):
             self.window_height = 360
@@ -123,7 +130,7 @@ class RectangularEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
-
+        self.player_alive = True 
         # generamos las cajas irrompibles
         for i in range(self.width):
             for j in range(self.height):
@@ -143,7 +150,7 @@ class RectangularEnv(gym.Env):
         # Choose the agent's location uniformly at random
         aux = True
         while (aux):
-            x = self.np_random.integers(0, self.width, dtype=int) # HAY QUE CAMBIARLO
+            x = self.np_random.integers(0, self.width, dtype=int)
             y = self.np_random.integers(0, self.height, dtype=int)
             if not (exist(self.list_boxes,np.array([x,y]))):
                 aux = False
@@ -290,7 +297,7 @@ class RectangularEnv(gym.Env):
 
 
 # Ejemplo de uso
-env = RectangularEnv(3,4,2,'human')
+env = RectangularEnv(3,4,2,2,'human')
 
 for episode in range(100):
 
