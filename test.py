@@ -3,12 +3,41 @@ from gym import spaces
 import numpy as np
 import pygame
 
+
+class Item(object):
+    def __init__(self,pos):
+        self.pos = pos
+
+class Box(Item):
+    def __init__(self,pos,breakable):
+         super(Box,self).__init__(pos)
+         self.isBreakable = breakable
+
+    def get_state(self):
+        return (self.x, self.y, self.timer)
+
+
+'''
+class Bomb(Item):
+    def __init__(self,pos,timer):
+        super(Bomb,self).__init__(pos)
+        self.timer
+'''
+
 def mult(x,y):
         if(x > y):
             multi = x/y
         else:
             multi = y/x
         return multi
+
+def exist(list,pos):
+    for i in range(len(list)):
+        if(pos[0] == list[i].pos[0] and pos[1] == list[i].pos[1]):
+            return True
+    return False
+
+
 class RectangularEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
@@ -21,6 +50,9 @@ class RectangularEnv(gym.Env):
             print("El numero de cajas debe ser mayor que 1.")
             return 
         self.boxes = boxes
+        self.active_explosion = 0
+        self.active_bomb = 0
+        self.list_boxes = []
         
         
         m = mult(self.width, self.height)
@@ -71,7 +103,7 @@ class RectangularEnv(gym.Env):
     
     def _tile_is_free(self,direction):
         movement = self._agent_location + direction
-        if (np.any(np.all(movement == self.list_boxes,axis=1))):
+        if (exist(self.list_boxes,movement)):
             print("ESTOY CHOCANDO LOL")
             return False
         return True
@@ -90,19 +122,28 @@ class RectangularEnv(gym.Env):
         super().reset(seed=seed)
 
         # Choose the agent's location uniformly at random
-        x = self.np_random.integers(0, self.width, dtype=int)
+        x = self.np_random.integers(0, self.width, dtype=int) # HAY QUE CAMBIARLO
         y = self.np_random.integers(0, self.height, dtype=int)
         self._agent_location = np.array([x,y])
-        self.list_boxes = []
+
+        # generamos las cajas irrompibles
+        for i in range(self.width):
+            for j in range(self.height):
+                if ((i % 2 == 1) and (j % 2 == 1)):
+                    self.list_boxes.append(Box(np.array([i,j]),False))
+        
+        for i in range(self.boxes):
+            print(self.list_boxes[i].pos)
+
+        
+        # generamos las cajas rompibles
         i=0
         while i < self.boxes:
             box_pos = np.array([self.np_random.integers(0,self.width-1,dtype=int),self.np_random.integers(0,self.height-1,dtype=int)])
-            if self.list_boxes == []:
-                self.list_boxes.append(box_pos)
-                i+=1
-            elif not np.any(np.all(box_pos == self.list_boxes, axis=1)):
-                self.list_boxes.append(box_pos)
-                i+=1
+            for j in range(len(self.list_boxes)):
+                if not (exist(self.list_boxes,box_pos)):
+                    self.list_boxes.append(Box(box_pos,True))
+                    i+=1
 
 
         # We will sample the target's location randomly until it does not coincide with the agent's location
@@ -190,14 +231,24 @@ class RectangularEnv(gym.Env):
 
         # Now we draw the destructible boxes
         for i in range(len(self.list_boxes)):
-            pygame.draw.rect(
-                canvas,
-                (94, 82, 60),
-                pygame.Rect(
-                    (self.list_boxes[i] * pix_square_size),
-                    (pix_square_size, pix_square_size),
-                ),
-            )
+            if (self.list_boxes[i].isBreakable):
+                pygame.draw.rect(
+                    canvas,
+                    (157, 124, 63),
+                    pygame.Rect(
+                        (self.list_boxes[i].pos * pix_square_size),
+                        (pix_square_size, pix_square_size),
+                    ),
+                )
+            else:
+                pygame.draw.rect(
+                    canvas,
+                    (88, 82, 72),
+                    pygame.Rect(
+                        (self.list_boxes[i].pos * pix_square_size),
+                        (pix_square_size, pix_square_size),
+                    ),
+                )
 
         # Finally, add some gridlines
         for x in range(self.height + 1):
@@ -234,7 +285,7 @@ class RectangularEnv(gym.Env):
 
 
 # Ejemplo de uso
-env = RectangularEnv(12,12,25,'human')
+env = RectangularEnv(12,12,2,'human')
 
 for episode in range(100):
 
