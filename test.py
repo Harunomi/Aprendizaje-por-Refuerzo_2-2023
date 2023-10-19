@@ -48,7 +48,7 @@ def exist(list,pos):
 class RectangularEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, width, height,boxes,enemies, render_mode = None):
+    def __init__(self, width, height, boxes, enemies_x, enemies_y, rompible_file, render_mode = None):
         super(RectangularEnv, self).__init__()
 
         self.width = width
@@ -62,8 +62,9 @@ class RectangularEnv(gym.Env):
         self.boxes = boxes # total de cajas rompibles
         self.list_boxes_breakable = [] # lista para las cajas rompibles 
         self.list_enemies = [] # lista que contendra a los enemigos
-        self.enemies = enemies # total de enemigos entregados por el constructor 
-
+        self.enemies_x = enemies_x # total de enemigos horizontales
+        self.enemies_y = enemies_y # total de enemigos verticales
+        self.rompible_file = rompible_file # archivo de cajas irrompibles
         m = mult(self.width, self.height)
         if(self.width > self.height):
             self.window_height = 360
@@ -133,19 +134,37 @@ class RectangularEnv(gym.Env):
         self.player_alive = True 
         # generamos las cajas irrompibles
         for i in range(self.width):
-            for j in range(self.height):
+            for j in range(self.height):                        
                 if ((i % 2 == 1) and (j % 2 == 1)):
                     self.list_boxes.append(Box(np.array([i,j]),False,False))
         
         # generamos las cajas rompibles
-        i=0
-        while i < self.boxes:
-            box_pos = np.array([self.np_random.integers(0,self.width-1,dtype=int),self.np_random.integers(0,self.height-1,dtype=int)])
-            for j in range(len(self.list_boxes)):
-                if not (exist(self.list_boxes,box_pos)):
-                    self.list_boxes.append(Box(box_pos,True,False))
-                    self.list_boxes_breakable.append(Box(box_pos,True,False))
-                    i+=1
+        if self.rompible_file:
+            rompible_info = []
+            with open(self.rompible_file, "r") as file:
+                for line in file:
+                    rompible_info.append(line.strip())
+            if rompible_info:
+                print("El archivo no esta vacio")
+                if len(rompible_info) == self.boxes:
+                # Procesa la información y genera cajas irrompibles
+                    rompible_coordinates = []
+                    for line in rompible_info:
+                        x, y = map(int, line.split(","))
+                        rompible_coordinates.append((x, y))
+                    for coordinates in rompible_coordinates:
+                        print(coordinates)
+                        self.list_boxes.append(Box(np.array(coordinates), True, False))
+                        self.list_boxes_breakable.append(Box(np.array(coordinates), True, False))
+        else:
+            i=0
+            while i < self.boxes:
+                box_pos = np.array([self.np_random.integers(0,self.width-1,dtype=int),self.np_random.integers(0,self.height-1,dtype=int)])
+                for j in range(len(self.list_boxes)):
+                    if not (exist(self.list_boxes,box_pos)):
+                        self.list_boxes.append(Box(box_pos,True,False))
+                        self.list_boxes_breakable.append(Box(box_pos,True,False))
+                        i+=1
 
         # Choose the agent's location uniformly at random
         aux = True
@@ -163,7 +182,29 @@ class RectangularEnv(gym.Env):
                 self.list_boxes[i].isTarget = True
                 self._target_location = target_box.pos
 
+        for j in range(self.enemies_x):
+            m = self.np_random.integers(0, self.width, dtype=int)
+            n = self.np_random.integers(0, self.height, dtype=int)
+            if self.list_enemies:
+                if not (exist(self.list_boxes,np.array([m,n])) and exist(self._agent_location,np.array([m,n])) and exist(self.list_enemies,np.array([m,n]))):
+                    w = self.np_random.integers(0, 1, dtype=int) # 0: Up, 1: Down
+                    self.list_enemies.append(Enemy(np.array([m,n]),0,w,True)) # 0 en orientation es horizontal
+            else:
+                if not (exist(self.list_boxes,np.array([m,n])) and exist(self._agent_location,np.array([m,n]))):
+                    w = self.np_random.integers(0, 1, dtype=int) # 0: Up, 1: Down
+                    self.list_enemies.append(Enemy(np.array([m,n]),0,w,True)) # 0 en orientation es horizontal
 
+        for k in range(self.enemies_y):
+            o = self.np_random.integers(0, self.width, dtype=int)
+            p = self.np_random.integers(0, self.height, dtype=int)
+            if self.list_enemies:
+                if not (exist(self.list_boxes,np.array([o,p])) and exist(self._agent_location,np.array([o,p])) and exist(self.list_enemies,np.array([o,p]))):
+                    w = self.np_random.integers(0, 1, dtype=int) # 0: Left, 1: Right
+                    self.list_enemies.append(Enemy(np.array([o,p]),1,w,True)) # 1 en orientation es vertical
+            else:
+                if not (exist(self.list_boxes,np.array([o,p])) and exist(self._agent_location,np.array([o,p]))):
+                    w = self.np_random.integers(0, 1, dtype=int) # 0: Left, 1: Right
+                    self.list_enemies.append(Enemy(np.array([o,p]),1,w,True)) # 1 en orientation es vertical
         observation = self._get_obs()
         info = self._get_info()
 
@@ -297,7 +338,7 @@ class RectangularEnv(gym.Env):
 
 
 # Ejemplo de uso
-env = RectangularEnv(3,4,2,2,'human')
+env = RectangularEnv(10,5,2,2,2,"Documents/Universidad/Aprendizaje_Por_Refuerzo/Aprendizaje-por-Refuerzo_2-2023/cajas.txt",'human')
 
 for episode in range(100):
 
