@@ -36,6 +36,16 @@ class Bomb(Item):
         super(Bomb,self).__init__(pos)
         self.timer = timer
 
+    def get_state(self):
+        return (self.pos, self.timer)
+
+
+class Explosion(Item):
+    def __init__(self,pos):
+        super(Explosion,self).__init__(pos)
+
+    def get_state(self):
+        return (self.pos)
 
 def mult(x,y):
         if(x > y):
@@ -52,7 +62,7 @@ def exist(list,pos):
 
 
 class BombermanEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 2}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 12}
 
     def __init__(self, width, height, boxes, enemies_x, enemies_y, rompible_file, render_mode = None):
         super(BombermanEnv, self).__init__()
@@ -62,8 +72,6 @@ class BombermanEnv(gym.Env):
         if boxes < 1:
             print("El numero de cajas debe ser mayor que 1.")
             return 
-        self.active_explosion = 0
-        self.active_bomb = 0
         self.list_boxes = [] # lista para las cajas rompibles e irrompibles
         self.boxes = boxes # total de cajas rompibles
         self.list_boxes_breakable = [] # lista para las cajas rompibles 
@@ -88,7 +96,7 @@ class BombermanEnv(gym.Env):
         )
 
         # Define el espacio de acción (puedes personalizar esto según tu entorno)
-        self.action_space = spaces.Discrete(4)  # Ejemplo: acciones discretas 0, 1, 2, 3
+        self.action_space = spaces.Discrete(6)  # Ejemplo: acciones discretas 0, 1, 2, 3
 
         self._action_to_direction = {
             0: np.array([1, 0]),
@@ -127,7 +135,12 @@ class BombermanEnv(gym.Env):
         return True
 
     def _get_obs(self):
-        return {"agent": self._agent_location, "target": self._target_location}
+        return {"agent": self._agent_location,
+                 "target": self._target_location,
+                 "boxes": self.list_boxes,
+                 "enemies": self.list_enemies,
+                 "bomb": self.bomb,
+                 "explosion": self.explosion_radius,}
     
     def _get_info(self):
         return {
@@ -139,6 +152,11 @@ class BombermanEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
+        self.list_boxes = [] # lista para las cajas rompibles e irrompibles
+        self.list_boxes_breakable = [] # lista para las cajas rompibles
+        self.list_enemies = [] # lista que contendra a los enemigos
+        self.active_explosion = 0
+        self.active_bomb = 0
         self.player_alive = True 
         # generamos las cajas irrompibles
         for i in range(self.width):
@@ -223,12 +241,55 @@ class BombermanEnv(gym.Env):
 
 
     def step(self, action):
+        reward = 0
         # Map the action (element of {0,1,2,3}) to the direction we walk in
         direction = self._action_to_direction[action]
         print(self._action_to_names[action])
         # We use `np.clip` to make sure we don't leave the grid
         x,y = self._agent_location + direction
         print(x,y)
+
+        #-------------------------------------Bomb Explosion-------------------------------------------#
+        if (self.active_bomb == 1):
+            # hay una bomba activa, por lo que se debe verificar si exploto
+            if (self.bomb.timer == 0):
+                # calculamos el radio de explosion que es un bloque mas que el radio de la bomba
+                self.explosion_radius = []
+                for i in range(4):
+                    self.explosion_radius.append(Explosion(np.array(self.bomb.pos + self._action_to_direction[i])))
+                self.explosion_radius.append(Explosion(self.bomb.pos))
+                self.active_explosion = 1
+                # verificamos si el agente esta en el radio de explosion
+                if (exist(self.explosion_radius,self._agent_location)):
+                    self.player_alive = False
+                    observation = self._get_obs()
+                    info = self._get_info()
+                    reward = -100
+                    terminated = 0
+                    return observation, reward, terminated, True, info
+                
+                # verificamos si las cajas rompibles estan en el radio de explosion
+                for i in range(len(self.list_boxes)):
+                    if (self.list_boxes[i].isBreakable):
+                        if (exist(self.explosion_radius,self.list_boxes[i].pos)):
+                            self.list_boxes[i].isBroken = True
+                            # faltaria cambiar la recompenza obtenida por romper una caja
+                            reward += 7
+
+                # verificamos si los enemigos estan en el radio de explosion
+                for i in range(len(self.list_enemies)):
+                    if (exist(self.explosion_radius,self.list_enemies[i].pos)):
+                        self.list_enemies[i].isAlive = False
+                        # faltaria cambiar la recompenza obtenida por matar un enemigo
+                        reward += 5
+                self._render_frame() 
+                self.active_bomb = 0
+                self.explosion_radius = []
+            else:
+                self.bomb.timer -= 1
+                            
+
+                
 
         #-------------------------------------Agent movement-------------------------------------------#
         if (action == 2 or action == 0) and self._tile_is_free(direction):
@@ -239,12 +300,17 @@ class BombermanEnv(gym.Env):
             self._agent_location = np.clip(
                 self._agent_location + direction, 0, self.height - 1
             )
-        if (exist(self.list_enemies,self._agent_location)):
-            terminated = np.array_equal(self._agent_location, self._target_location)
-            reward = 1 if terminated else 0  # Binary sparse rewards
-            observation = self._get_obs()
-            info = self._get_info()
-            return observation, reward, terminated, True, info
+
+        #-------------------------------------Hit an enemy-------------------------------------------#
+        for i in range(len(self.list_enemies)):
+            if self.list_enemies[i].isAlive:
+                if (np.array_equal(self._agent_location,self.list_enemies[i].pos)):
+                    self.player_alive = False
+                    observation = self._get_obs()
+                    info = self._get_info()
+                    reward = -100
+                    terminated = 0
+                    return observation, reward, terminated, True, info
 
         
         #-------------------------------------Enemy Movement-------------------------------------------#
@@ -300,12 +366,15 @@ class BombermanEnv(gym.Env):
 
 
         #-------------------------------------Bomb Placement-------------------------------------------#
-        #WIP
+        if (action == 4) and (self.active_bomb == 0):
+            # no hay una bomba activa, por lo que se puede poner una
+            self.active_bomb = 1
+            self.bomb = Bomb(self._agent_location,6)
+            reward = 10
 
+        
         # An episode is done iff the agent has reached the target
         terminated = np.array_equal(self._agent_location, self._target_location)
-        
-        reward = 1 if terminated else 0  # Binary sparse rewards
         observation = self._get_obs()
         info = self._get_info()
 
@@ -383,7 +452,8 @@ class BombermanEnv(gym.Env):
 
         # ------------------------------------Now we draw the enemies------------------------------------
         for i in range(len(self.list_enemies)):
-            pygame.draw.circle(
+            if self.list_enemies[i].isAlive:
+                pygame.draw.circle(
                 canvas,
                 (184, 22, 37),
                 (self.list_enemies[i].pos + 0.5) * pix_square_size,
@@ -391,8 +461,23 @@ class BombermanEnv(gym.Env):
             )
 
         # ------------------------------------Now we draw the bombs------------------------------------
-        #WIP
+        if (self.active_bomb == 1):
+            pygame.draw.circle(
+                canvas,
+                (0, 0, 0),
+                (self.bomb.pos + 0.4) * pix_square_size,
+                pix_square_size / 3,
+            )
 
+        # ------------------------------------Now we draw the explosion------------------------------------
+        if (self.active_explosion == 1):
+            for i in range(len(self.explosion_radius)):
+                pygame.draw.circle(
+                    canvas,
+                    (206, 125, 9),
+                    (self.explosion_radius[i].pos + 0.5) * pix_square_size,
+                    pix_square_size / 3,
+                )
 
         # Finally, add some gridlines
         for x in range(self.height + 1):
