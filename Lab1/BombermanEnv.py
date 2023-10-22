@@ -47,6 +47,13 @@ class Explosion(Item):
     def get_state(self):
         return (self.pos)
 
+class Guided_Agent(Item):
+    def __init__(self,pos):
+        super(Guided_Agent,self).__init__(pos)
+    
+    def get_state(self):
+        return (self.pos)
+
 def mult(x,y):
         if(x > y):
             multi = x/y
@@ -60,9 +67,14 @@ def exist(list,pos):
             return True
     return False
 
+def index(list,pos):
+    for i in range(len(list)):
+        if(pos[0] == list[i].pos[0] and pos[1]  == list[i].pos[1]):
+            return i
+
 
 class BombermanEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 12}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 1}
 
     def __init__(self, width, height, boxes, enemies_x, enemies_y, rompible_file, render_mode = None):
         super(BombermanEnv, self).__init__()
@@ -79,6 +91,9 @@ class BombermanEnv(gym.Env):
         self.enemies_x = enemies_x # total de enemigos horizontales
         self.enemies_y = enemies_y # total de enemigos verticales
         self.rompible_file = rompible_file # archivo de cajas irrompibles
+        self.bomb = None # se inicializa la bomba
+        self.explosion_radius = None
+        self.guided_agent = Guided_Agent(None)
         m = mult(self.width, self.height)
         if(self.width > self.height):
             self.window_height = 670
@@ -158,6 +173,8 @@ class BombermanEnv(gym.Env):
         self.active_explosion = 0
         self.active_bomb = 0
         self.player_alive = True 
+        self.previous_action = -1
+        self.penultimate_action = -1
         # generamos las cajas irrompibles
         for i in range(self.width):
             for j in range(self.height):                        
@@ -199,6 +216,14 @@ class BombermanEnv(gym.Env):
                 aux = False
                 self._agent_location = np.array([x,y])
 
+        # Choose the guiaded agent's location uniformly at random
+        aux = True
+        while (aux):
+            x = self.np_random.integers(0, self.width, dtype=int)
+            y = self.np_random.integers(0, self.height, dtype=int)
+            if not (exist(self.list_boxes, np.array([x, y]))):
+                aux = False
+                self.guided_agent.pos = np.array([x, y])
 
         # Choose target location between breakable boxes
         target_box = self.list_boxes_breakable[self.np_random.integers(0,len(self.list_boxes_breakable),dtype=int)]
@@ -238,7 +263,1745 @@ class BombermanEnv(gym.Env):
 
         return observation, info
 
+    def _determine_guided_agent_action(self):
+    # Obtener la posición actual del agente guiado
+        guided_agent_position = self.guided_agent.pos  
 
+    # Obtener la posición del objetivo
+        target_position = self.target.pos
+    # Calcular la distancia en X con el objetivo
+        direction_x = target_position[0] - guided_agent_position[0]
+        direction_y = target_position[1] - guided_agent_position[1]
+    # Mientras no este en la misma posición en X que el objetivo
+        while(direction_x != 0): # Cuando sea igual a 0 el agente estará en el componente X de la posición del target
+            if(direction_x > 0): # Si es positivo se va a mover hacia la derecha
+                move = guided_agent_position + np.array([1,0]) # Se simula el movimiento
+                if (self.previous_action == 4): # Si acción previa fue poner la bomba
+                    if (guided_agent_position[0] % 2 == 1): # Si se encuentra entre 2 cajas irrompibles, su unica opción es moverse a la izquierda(atras)
+                        move = guided_agent_position + np.array([-1,0]) # Se simula el movimiento
+                        if(exist(self.list_boxes_breakable, move)) and (self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si existe una caja rompible detras sólo tiene la opción de esperar
+                            action = 5 # El agente va a morir si o si
+                            return action
+                        else: # Si no existe una caja rompible detrás, se mueve hacia atras
+                            action = 2 
+                            self.previous_action = action # Se actualiza la acción previa
+                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                            return action
+                    else: # Si no se encuentra entre 2 cajas irrompibles, entonces tiene 3 opciones, pero se priorizará el movimiento hacia la posición Y del target
+                        if(direction_y > 0): # Si es positivo se va a mover hacia abajo
+                            move = guided_agent_position + np.array([0,1]) # Se simula la acción
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompibe abajo
+                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                    action = 1 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penltima acción
+                                    return action
+                                else: # Si existe una caja rompible más abajo
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la enultima acción
+                                            return action
+                                        else: # Si existe caja rompible más atras
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action 
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                        else: # Si existe caja rompible más arriba
+                                            action = 5 # El agente va a morir si o si
+                                            return action
+                            else: # Si existe caja rompible abajo
+                                move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atra, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                        action = 2 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más atras
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible atras
+                                    move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                        move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                            action = 3 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe caja rompible arriba
+                                        action = 5 # El agente muere si o si
+                                        return action
+                        else: # Si es negativo o 0 se va a mover hacia arriba
+                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe caja más arriba, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                    action = 3 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                    return action
+                                else: # Si existe una caja rompible más arriba
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe caja más atras, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                            return action
+                                        else: # Si existe una caja más atras
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si existe caja rompible arriba
+                                move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no eixste caja rompible más atras
+                                        action = 2 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actuliza la penultima acción
+                                        return action
+                                    else: # Si existe caja rompible más atras
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible atras
+                                    move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                        move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                            action = 1 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe una caja rompible abajo
+                                        action = 5 # El agente muere si o si
+                                        return action
+                # ---------------------------Acción previa hacia atras-------------------------------------
+                elif (self.previous_action == 2): # Si la acción anterior fue hacia atras
+                    if(guided_agent_position[0] % 2 == 1): # Si el agente se encuentra entre 2 cajas irrompibles
+                        action = 2 # Se realiza la acción hacia atras
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 2 # Se actualiza la penultima acción
+                    else: # Si el agente no se encuentra entre 2 cajas, existen 2 posibilidades, que su anterior acción haya sido poner la bomba o que su anterior acción haya sido moverse hacia atras
+                        if(self.penultimate_action == 2): # Si su penultima acción fue moverse hacia atras
+                            while(self.bomb.timer != 0): # Mientras la bomba no explote
+                                action = 5 # El agente va a esperar
+                            action = 5 # Una vez que explote va a esperar una vez más
+                            self.previous_action = -1 # Se reinicia la acción previa
+                            self.penultimate_action = -1 # Se reinicia la penultima acción
+                        else: # Si su penultima acción no fue moverse hacia atras
+                            if(direction_y > 0): # Si es positivo se va a mover hacia abajo
+                                move = guided_agent_position + np.array([0,1]) # Se simula la acción
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompibe abajo
+                                    move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                        action = 1 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penltima acción
+                                        return action
+                                    else: # Si existe una caja rompible más abajo
+                                        move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                            move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                                action = 2 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la enultima acción
+                                                return action
+                                            else: # Si existe caja rompible más atras
+                                                move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                    move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                        action = 3 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más arriba
+                                                        action = 5 # El agente va a morir si o si
+                                                        return action 
+                                                else: # Si existe caja rompible arriba
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action
+                                        else: # Si existe caja rompible atras
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                else: # Si existe caja rompible abajo
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atra, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más atras
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si es negativo o 0 se va a mover hacia arriba
+                                move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                    move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe caja más arriba, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                        action = 3 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más arriba
+                                        move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                            move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe caja más atras, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                                action = 2 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más atras
+                                                move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                    move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                        action = 1 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más abajo
+                                                        action = 5 # El agente muere si o si
+                                                        return action
+                                                else: # Si existe caja rompible abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                        else: # Si existe caja rompible atras
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                else: # Si existe caja rompible arriba
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no eixste caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuliza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más atras
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe una caja más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe una caja abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                        
+                #-------------------------------------Acción previa abajo--------------------------------
+                elif(self.previous_action == 1): # Si la acción previa fue hacia abajo, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia atras o hacia abajo
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 1 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 1 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fua hacia atras o hacia abajo
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                #-------------------------------------Acción previa arriba------------------------------
+                elif(self.previous_action == 3): # Si la acción previa fue hacia arriba, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia atras o hacia arriba
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 3 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 3 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fua hacia atras o hacia arriba
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                #---------------------------------Si no existe acción previa--------------------------
+                elif(self.previous_action == -1):
+                    if(exist(self.list_boxes_breakable, move)) and (self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                        action = 4
+                        self.previous_action = action
+                        return action
+                    elif(exist(self.list_boxes, move)):
+                        if(direction_y > 0):
+                            move = guided_agent_position + np.array([0,1])
+                            if(exist(self.list_boxes_breakable, move)) and (self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 1
+                                self.previous_action = action
+                                return action
+                        else:
+                            move = guided_agent_position + np.array([0,-1])
+                            if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 3
+                                self.previous_action = action
+                                return action
+                    else:
+                        action = 0
+                        return action
+            else: # Se mueve hacia la izquierda(atras)
+                move = guided_agent_position + np.array([-1,0])
+                if (self.previous_action == 4): # Si acción previa fue poner la bomba
+                    if (guided_agent_position[0] % 2 == 1): # Si se encuentra entre 2 cajas irrompibles, su unica opción es moverse a la derecha(adelante)
+                        move = guided_agent_position + np.array([1,0]) # Se simula el movimiento
+                        if(exist(self.list_boxes_breakable, move)) and (self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si existe una caja rompible adelante sólo tiene la opción de esperar
+                            action = 5 # El agente va a morir si o si
+                            return action
+                        else: # Si no existe una caja rompible adelante, se mueve hacia adelante
+                            action = 0
+                            self.previous_action = action # Se actualiza la acción previa
+                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                            return action
+                    else: # Si no se encuentra entre 2 cajas irrompibles, entonces tiene 3 opciones, pero se priorizará el movimiento hacia la posición Y del target
+                        if(direction_y > 0): # Si es positivo se va a mover hacia abajo
+                            move = guided_agent_position + np.array([0,1]) # Se simula la acción
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompibe abajo
+                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                    action = 1 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penltima acción
+                                    return action
+                                else: # Si existe una caja rompible más abajo
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la enultima acción
+                                            return action
+                                        else: # Si existe caja rompible más adelante
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action 
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                        else: # Si existe caja rompible más arriba
+                                            action = 5 # El agente va a morir si o si
+                                            return action
+                            else: # Si existe caja rompible abajo
+                                move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                    move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                        action = 0 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más adelante
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible adelante
+                                    move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                        move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                            action = 3 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe caja rompible arriba
+                                        action = 5 # El agente muere si o si
+                                        return action
+                        else: # Si es negativo o 0 se va a mover hacia arriba
+                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe caja más arriba, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                    action = 3 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                    return action
+                                else: # Si existe una caja rompible más arriba
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                            return action
+                                        else: # Si existe una caja más adelante
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si existe caja rompible arriba
+                                move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                        action = 0 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actuliza la penultima acción
+                                        return action
+                                    else: # Si existe caja rompible más adelante
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible adelante
+                                    move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                        move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                            action = 1 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe una caja rompible abajo
+                                        action = 5 # El agente muere si o si
+                                        return action
+                # ---------------------------Acción previa hacia adelante-------------------------------------
+                elif (self.previous_action == 0): # Si la acción anterior fue hacia adelante
+                    if(guided_agent_position[0] % 2 == 1): # Si el agente se encuentra entre 2 cajas irrompibles
+                        action = 0 # Se realiza la acción hacia adelante
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 0 # Se actualiza la penultima acción
+                    else: # Si el agente no se encuentra entre 2 cajas, existen 2 posibilidades, que su anterior acción haya sido poner la bomba o que su anterior acción haya sido moverse hacia atras
+                        if(self.penultimate_action == 0): # Si su penultima acción fue moverse hacia adelante
+                            while(self.bomb.timer != 0): # Mientras la bomba no explote
+                                action = 5 # El agente va a esperar
+                            action = 5 # Una vez que explote va a esperar una vez más
+                            self.previous_action = -1 # Se reinicia la acción previa
+                            self.penultimate_action = -1 # Se reinicia la penultima acción
+                        else: # Si su penultima acción no fue moverse hacia adelante
+                            if(direction_y > 0): # Si es positivo se va a mover hacia abajo
+                                move = guided_agent_position + np.array([0,1]) # Se simula la acción
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompibe abajo
+                                    move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                        action = 1 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penltima acción
+                                        return action
+                                    else: # Si existe una caja rompible más abajo
+                                        move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                            move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                                action = 0 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la enultima acción
+                                                return action
+                                            else: # Si existe caja rompible más adelante
+                                                move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                    move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                        action = 3 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más arriba
+                                                        action = 5 # El agente va a morir si o si
+                                                        return action 
+                                                else: # Si existe caja rompible arriba
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action
+                                        else: # Si existe caja rompible adelante
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                else: # Si existe caja rompible abajo
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más adelante
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si es negativo o 0 se va a mover hacia arriba
+                                move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                    move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe caja más arriba, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                        action = 3 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más arriba
+                                        move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                            move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe caja más adelante, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                                action = 0 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más adelante
+                                                move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                    move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                        action = 1 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más abajo
+                                                        action = 5 # El agente muere si o si
+                                                        return action
+                                                else: # Si existe caja rompible abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                        else: # Si existe caja rompible adelante
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                else: # Si existe caja rompible arriba
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no eixste caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuliza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más adelante
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe una caja más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe una caja abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                        
+                #-------------------------------------Acción previa abajo--------------------------------
+                elif(self.previous_action == 1): # Si la acción previa fue hacia abajo, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia adelante o hacia abajo
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 1 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 1 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fua hacia adelante o hacia abajo
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                #-------------------------------------Acción previa arriba------------------------------
+                elif(self.previous_action == 3): # Si la acción previa fue hacia arriba, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia adelante o hacia arriba
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 3 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 3 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fue hacia adelante o hacia arriba
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                #---------------------------------Si no existe acción previa--------------------------
+                elif(self.previous_action == -1):
+                    if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                        action = 4
+                        self.previous_action = action
+                        return action
+                    elif(exist(self.list_boxes, move)):
+                        if(direction_y > 0):
+                            move = guided_agent_position + np.array([0,1])
+                            if(exist(self.list_boxes_breakable, move)):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 1
+                                self.previous_action = action
+                                return action
+                        else:
+                            move = guided_agent_position + np.array([0,-1])
+                            if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 3
+                                self.previous_action = action
+                                return action
+                    else:
+                        action = 2
+                        return action
+        #------------------------------------Movimiento Vertical------------------------------------
+        while(direction_y != 0):
+            if(direction_y > 0):
+                move = guided_agent_position + np.array([0,1])
+                if (self.previous_action == 4): # Si acción previa fue poner la bomba
+                    if (guided_agent_position[1] % 2 == 1): # Si se encuentra entre 2 cajas irrompibles, su unica opción es moverse hacia arriba
+                        move = guided_agent_position + np.array([0,-1]) # Se simula el movimiento
+                        if(exist(self.list_boxes_breakable, move)) and (self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si existe una caja rompible arriba sólo tiene la opción de esperar
+                            action = 5 # El agente va a morir si o si
+                            return action
+                        else: # Si no existe una caja rompible adelante, se mueve hacia arriba 
+                            action = 3
+                            self.previous_action = action # Se actualiza la acción previa
+                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                            return action
+                    else: # Si no se encuentra entre 2 cajas irrompibles, entonces tiene 3 opciones, pero se priorizará el movimiento hacia la posición X del target
+                        if(direction_x > 0): # Si es positivo se va a mover hacia la derecha
+                            move = guided_agent_position + np.array([1,0]) # Se simula la acción
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                    action = 0 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penltima acción
+                                    return action
+                                else: # Si existe una caja rompible más adelante
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la enultima acción
+                                            return action
+                                        else: # Si existe caja rompible más atras
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action 
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                        else: # Si existe caja rompible más arriba
+                                            action = 5 # El agente va a morir si o si
+                                            return action
+                            else: # Si existe caja rompible adelante
+                                move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                        action = 2 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más atras
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible atras
+                                    move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                        move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                            action = 3 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe caja rompible arriba
+                                        action = 5 # El agente muere si o si
+                                        return action
+                        else: # Si es negativo o 0 se va a mover hacia atras
+                            move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe caja más atras, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                    action = 2 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                    return action
+                                else: # Si existe una caja rompible más atras
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                            return action
+                                        else: # Si existe una caja más adelante
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si existe caja rompible atras
+                                move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                    move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                        action = 0 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actuliza la penultima acción
+                                        return action
+                                    else: # Si existe caja rompible más adelante
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible adelante
+                                    move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                        move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                            action = 3 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe una caja rompible arriba
+                                        action = 5 # El agente muere si o si
+                                        return action
+                # ---------------------------Acción previa hacia arriba-------------------------------------
+                elif (self.previous_action == 3): # Si la acción anterior fue hacia arriba
+                    if(guided_agent_position[1] % 2 == 1): # Si el agente se encuentra entre 2 cajas irrompibles
+                        action = 3 # Se realiza la acción hacia arriba
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 3 # Se actualiza la penultima acción
+                    else: # Si el agente no se encuentra entre 2 cajas, existen 2 posibilidades, que su anterior acción haya sido poner la bomba o que su anterior acción haya sido moverse hacia arriba
+                        if(self.penultimate_action == 3): # Si su penultima acción fue moverse hacia arriba
+                            while(self.bomb.timer != 0): # Mientras la bomba no explote
+                                action = 5 # El agente va a esperar
+                            action = 5 # Una vez que explote va a esperar una vez más
+                            self.previous_action = -1 # Se reinicia la acción previa
+                            self.penultimate_action = -1 # Se reinicia la penultima acción
+                        else: # Si su penultima acción no fue moverse hacia arriba
+                            if(direction_x > 0): # Si es positivo se va a mover hacia adelante
+                                move = guided_agent_position + np.array([1,0]) # Se simula la acción
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompibe adelante
+                                    move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                        action = 0 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penltima acción
+                                        return action
+                                    else: # Si existe una caja rompible más adelante
+                                        move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                            move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                                action = 2 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la enultima acción
+                                                return action
+                                            else: # Si existe caja rompible más atras
+                                                move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                    move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                        action = 3 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más arriba
+                                                        action = 5 # El agente va a morir si o si
+                                                        return action 
+                                                else: # Si existe caja rompible arriba
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action
+                                        else: # Si existe caja rompible atras
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                else: # Si existe caja rompible adelante
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más atras
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si es negativo o 0 se va a mover hacia atras
+                                move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe caja más atras, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                        action = 2 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más atras
+                                        move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                            move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe caja más adelante, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                                action = 0 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más adelante
+                                                move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                    move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                        action = 3 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más arriba
+                                                        action = 5 # El agente muere si o si
+                                                        return action
+                                                else: # Si existe caja rompible arriba
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                        else: # Si existe caja rompible adelante
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más arriba
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                else: # Si existe caja rompible atras
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no eixste caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuliza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más adelante
+                                            move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                    action = 3 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe una caja más arriba
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe una caja arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más arriba, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 3 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja rompible más arriba
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja rompible arriba
+                                            action = 5 # El agente muere si o si
+                                            return action
+                        
+                #-------------------------------------Acción previa adelante--------------------------------
+                elif(self.previous_action == 0): # Si la acción previa fue hacia adelante, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia adelante o hacia arriba
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 0 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 0 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fua hacia adelante o hacia arriba
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                #-------------------------------------Acción previa atras------------------------------
+                elif(self.previous_action == 2): # Si la acción previa fue hacia atras, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia atras o hacia arriba
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 2 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 2 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fue hacia atras o hacia arriba
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                 #---------------------------------Si no existe acción previa--------------------------
+                elif(self.previous_action == -1):
+                    if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                        action = 4
+                        self.previous_action = action
+                        return action
+                    elif(exist(self.list_boxes, move)):
+                        if(direction_x > 0):
+                            move = guided_agent_position + np.array([1,0])
+                            if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 0
+                                self.previous_action = action
+                                return action
+                        else:
+                            move = guided_agent_position + np.array([-1,0])
+                            if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 2
+                                self.previous_action = action
+                                return action
+                    else:
+                        action = 1
+                        self.previous_action = action
+                        return action
+            else: # Movimiento hacia arriba
+                move = guided_agent_position + np.array([0,-1])
+                if (self.previous_action == 4): # Si acción previa fue poner la bomba
+                    if (guided_agent_position[1] % 2 == 1): # Si se encuentra entre 2 cajas irrompibles, su unica opción es moverse hacia abajo
+                        move = guided_agent_position + np.array([0,1]) # Se simula el movimiento
+                        if(exist(self.list_boxes_breakable, move)) and (self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si existe una caja rompible abajo sólo tiene la opción de esperar
+                            action = 5 # El agente va a morir si o si
+                            return action
+                        else: # Si no existe una caja rompible adelante, se mueve hacia abajo
+                            action = 1
+                            self.previous_action = action # Se actualiza la acción previa
+                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                            return action
+                    else: # Si no se encuentra entre 2 cajas irrompibles, entonces tiene 3 opciones, pero se priorizará el movimiento hacia la posición X del target
+                        if(direction_x > 0): # Si es positivo se va a mover hacia la derecha
+                            move = guided_agent_position + np.array([1,0]) # Se simula la acción
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                    action = 0 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penltima acción
+                                    return action
+                                else: # Si existe una caja rompible más adelante
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la enultima acción
+                                            return action
+                                        else: # Si existe caja rompible más atras
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajp
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action 
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más abajo
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                        else: # Si existe caja rompible abajo
+                                            action = 5 # El agente va a morir si o si
+                                            return action
+                            else: # Si existe caja rompible adelante
+                                move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                        action = 2 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más atras
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible atras
+                                    move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                        move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                            action = 1 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe caja rompible abajo
+                                        action = 5 # El agente muere si o si
+                                        return action
+                        else: # Si es negativo o 0 se va a mover hacia atras
+                            move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe caja más atras, el agente morirá
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                    action = 2 # Se realiza la acción
+                                    self.previous_action = action # Se actualiza la acción previa
+                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                    return action
+                                else: # Si existe una caja rompible más atras
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                            return action
+                                        else: # Si existe una caja más adelante
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si existe caja rompible atras
+                                move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                    move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                        action = 0 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actuliza la penultima acción
+                                        return action
+                                    else: # Si existe caja rompible más adelante
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                else: # Si existe caja rompible adelante
+                                    move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                        move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                            action = 1 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                                    else: # Si existe una caja rompible abajo
+                                        action = 5 # El agente muere si o si
+                                        return action
+                # ---------------------------Acción previa hacia abajo-------------------------------------
+                elif (self.previous_action == 1): # Si la acción anterior fue hacia abajo
+                    if(guided_agent_position[1] % 2 == 1): # Si el agente se encuentra entre 2 cajas irrompibles
+                        action = 1 # Se realiza la acción hacia arriba
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 3 # Se actualiza la penultima acción
+                    else: # Si el agente no se encuentra entre 2 cajas, existen 2 posibilidades, que su anterior acción haya sido poner la bomba o que su anterior acción haya sido moverse hacia arriba
+                        if(self.penultimate_action == 1): # Si su penultima acción fue moverse hacia abajo
+                            while(self.bomb.timer != 0): # Mientras la bomba no explote
+                                action = 5 # El agente va a esperar
+                            action = 5 # Una vez que explote va a esperar una vez más
+                            self.previous_action = -1 # Se reinicia la acción previa
+                            self.penultimate_action = -1 # Se reinicia la penultima acción
+                        else: # Si su penultima acción no fue moverse hacia abajo
+                            if(direction_x > 0): # Si es positivo se va a mover hacia adelante
+                                move = guided_agent_position + np.array([1,0]) # Se simula la acción
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompibe adelante
+                                    move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                        action = 0 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penltima acción
+                                        return action
+                                    else: # Si existe una caja rompible más adelante
+                                        move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                            move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                                action = 2 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la enultima acción
+                                                return action
+                                            else: # Si existe caja rompible más atras
+                                                move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                    move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                        action = 1 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más abajo
+                                                        action = 5 # El agente va a morir si o si
+                                                        return action 
+                                                else: # Si existe caja rompible abajo
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action
+                                        else: # Si existe caja rompible atras
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente va a morir si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente va a morir si o si
+                                                return action
+                                else: # Si existe caja rompible adelante
+                                    move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más atras, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                            action = 2 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actualiza la penultima acción
+                                            return action
+                                        else: # Si existe una caja rompible más atras
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible atras
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                            else: # Si es negativo o 0 se va a mover hacia atras
+                                move = guided_agent_position + np.array([-1,0]) # Se simula la acción hacia atras
+                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible atras
+                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe caja más atras, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más atras
+                                        action = 2 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
+                                    else: # Si existe una caja rompible más atras
+                                        move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                            move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe caja más adelante, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                                action = 0 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actuzliza la penultima acción
+                                                return action
+                                            else: # Si existe una caja más adelante
+                                                move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                    move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                        action = 1 # Se realiza la acción
+                                                        self.previous_action = action # Se actualiza la acción previa
+                                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                        return action
+                                                    else: # Si existe caja rompible más abajo
+                                                        action = 5 # El agente muere si o si
+                                                        return action
+                                                else: # Si existe caja rompible abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                        else: # Si existe caja rompible adelante
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe caja rompible más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe caja rompible abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                else: # Si existe caja rompible atras
+                                    move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no eixste caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuliza la penultima acción
+                                            return action
+                                        else: # Si existe caja rompible más adelante
+                                            move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                    action = 1 # Se realiza la acción
+                                                    self.previous_action = action # Se actualiza la acción previa
+                                                    self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                    return action
+                                                else: # Si existe una caja más abajo
+                                                    action = 5 # El agente muere si o si
+                                                    return action
+                                            else: # Si existe una caja abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                    else: # Si existe caja rompible adelante
+                                        move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
+                                            move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe una caja más abajo, el agente morirá
+                                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más abajo
+                                                action = 1 # Se realiza la acción
+                                                self.previous_action = action # Se actualiza la acción previa
+                                                self.penultimate_action = 4 # Se actualiza la penultima acción
+                                                return action
+                                            else: # Si existe una caja rompible más abajo
+                                                action = 5 # El agente muere si o si
+                                                return action
+                                        else: # Si existe una caja rompible abajo
+                                            action = 5 # El agente muere si o si
+                                            return action
+                        
+                #-------------------------------------Acción previa adelante--------------------------------
+                elif(self.previous_action == 0): # Si la acción previa fue hacia adelante, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia adelante o hacia abajo
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 0 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 0 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fua hacia adelante o hacia abajo
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                #-------------------------------------Acción previa atras------------------------------
+                elif(self.previous_action == 2): # Si la acción previa fue hacia atras, existen 3 posibilidades que su penultima acción haya sido poner la bomba o que la penultima acción haya sido moverse o hacia atras o hacia abajo
+                    if(self.penultimate_action == 4): # Si la penultima acción fue poner la bomba
+                        action = 2 # Se realiza la acción
+                        self.previous_action = action # Se actualiza la acción previa
+                        self.penultimate_action = 2 # Se actualiza la penultima acción
+                        return action
+                    else: # Si la penultima acción fue hacia atras o hacia abajo
+                        while(self.bomb.timer != 0): # Mientras la bomba no explote
+                            action = 5 # El agente va a esperar
+                        action = 5 # Cuando la bomba explote, el agente va a esperar la explosión
+                        self.previous_action = -1 # Se reinicia la acción previa
+                        self.penultimate_action = -1 # Se reinicia la penultima acción
+                        return action
+                 #---------------------------------Si no existe acción previa--------------------------
+                elif(self.previous_action == -1):
+                    if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                        action = 4
+                        self.previous_action = action
+                        return action
+                    elif(exist(self.list_boxes, move)):
+                        if(direction_x > 0):
+                            move = guided_agent_position + np.array([1,0])
+                            if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 0
+                                self.previous_action = action
+                                return action
+                        else:
+                            move = guided_agent_position + np.array([-1,0])
+                            if(exist(self.list_boxes_breakable, move) and self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False):
+                                action = 4
+                                self.previous_action = action
+                                return action
+                            else:
+                                action = 2
+                                self.previous_action = action
+                                return action
+                    else:
+                        action = 3
+                        self.previous_action = action
+                        return action
+
+        return action
 
     def step(self, action):
         reward = 0
@@ -300,6 +2063,20 @@ class BombermanEnv(gym.Env):
             self._agent_location = np.clip(
                 self._agent_location + direction, 0, self.height - 1
             )
+
+        #-------------------------------------Guided Agente movement-----------------------------------#
+        guided_action = self._determine_guided_agent_action() 
+        if guided_action is not None:
+        # Realiza la acción del agente guiado
+            if (guided_action == 4) and (self.active_bomb == 0):
+                self.active_bomb = 1
+                self.bomb = Bomb(self._agent_location,6)
+                reward = 10
+            pos = self.guided_agent.pos + self._action_to_direction[guided_action]
+            if not(np.array_equal(self._agent_location, pos) and exist(self.list_boxes, pos)):
+                self.guided_agent.pos = pos
+            elif (exist(self.list_boxes_breakable, pos)):
+                sdf
 
         #-------------------------------------Hit an enemy-------------------------------------------#
         for i in range(len(self.list_enemies)):
@@ -417,6 +2194,14 @@ class BombermanEnv(gym.Env):
             (0, 0, 255),
             (self._agent_location + 0.5) * pix_square_size,
             pix_square_size / 3,
+        )
+
+        # ---------------------------Now we draw the guiaded agent ---------------------------------
+        pygame.draw.circle(
+        canvas,
+        (0, 255, 0),  
+        (self.guided_agent.pos + 0.5) * pix_square_size,
+        pix_square_size / 3,
         )
 
         # ------------------------------------Now we draw the boxes------------------------------------
