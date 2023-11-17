@@ -89,12 +89,13 @@ class BombermanEnv(gym.Env):
             self.window_height = m * self.window_width
             
         # Define la forma del espacio de observación (en este caso, una imagen binaria)
-        self.observation_space = spaces.Dict(
-            {
-                "agent": spaces.Box(0, 1, shape=(2,), dtype=int),
-                "target": spaces.Box(0, 1, shape=(2,), dtype=int),
-            }
-        )
+        self.observation_space = spaces.Dict({
+            "agent": spaces.Box(low=0, high=1, shape=(2,), dtype=np.int32),
+            "target": spaces.Box(low=0, high=1, shape=(2,), dtype=np.int32),
+            "obstacles": spaces.MultiBinary(self.width * self.height),
+            "enemies": spaces.MultiBinary((enemies_x + enemies_y) * 2),  # x, y position for each enemy
+            "bomb": spaces.MultiBinary(2),  # x, y position of the bomb
+        })
 
         # Define el espacio de acción (puedes personalizar esto según tu entorno)
         self.action_space = spaces.Discrete(6)  # Ejemplo: acciones discretas 0, 1, 2, 3
@@ -127,7 +128,33 @@ class BombermanEnv(gym.Env):
         # Inicializa el estado inicial de tu entorno
         #self.state = np.zeros((width, height), dtype=np.float32)
 
+    def total_states(self):
+        # Calcular el total de estados posibles
+        total_states_agent = np.prod(self.observation_space["agent"].shape)
+        print("Total de estados agent: {}".format(total_states_agent))
+        total_states_target = np.prod(self.observation_space["target"].shape)
+        print("Total de estados target: {}".format(total_states_target))
+        total_states_obstacles = 2**(self.width * self.height)  # 2 opciones por cada celda
+        print("Total de estados obstacles: {}".format(total_states_obstacles))
+        total_states_enemies = 2**((self.enemies_y + self.enemies_x) * 2)  # 2 opciones por cada coordenada x, y
+        print("Total de estados enemies: {}".format(total_states_enemies))
+        total_states_bomb = 2**(self.observation_space["bomb"].shape[0])  # 2 opciones por cada coordenada x, y
+        print("Total de estados bomb: {}".format(total_states_bomb))
+
+        
+        total_states = (
+            total_states_agent
+            * total_states_target
+            * total_states_obstacles
+            * total_states_enemies
+            * total_states_bomb
+        )
+
+        print("Total de estados: {}".format(total_states))
+
+        return total_states
     
+
     def _tile_is_free(self,direction):
         movement = self._agent_location + direction
         if (exist(self.list_boxes,movement)):

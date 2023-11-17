@@ -1,3 +1,6 @@
+import numpy as np
+rng = np.random.default_rng()
+
 class MonteCarloAgent:
     '''
     Monte-Carlo agent.
@@ -17,13 +20,17 @@ class MonteCarloAgent:
         self.epsilon = epsilon
         self.alpha = alpha
 
+
         # Q_table
-        self.Q = np.zeros([self.env.observation_space.n, self.env.action_space.n])
+        self.Q = np.zeros([self.env.total_states(), self.env.action_space.n])
+        
+        print(self.Q)
 
 
     def act(self, state):
 
-        action = rng.choice(np.where(self.Q[state, :] == self.Q[state, :].max())[0])
+        max_indices = np.where(self.Q[state, :] == self.Q[state, :].max())[0]
+        action = rng.choice(max_indices)
 
         if rng.uniform() < self.epsilon:
             action = rng.choice(self.env.action_space.n)
