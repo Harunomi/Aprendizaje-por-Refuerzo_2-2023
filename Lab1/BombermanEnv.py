@@ -268,7 +268,7 @@ class BombermanEnv(gym.Env):
         guided_agent_position = self.guided_agent.pos  
 
     # Obtener la posición del objetivo
-        target_position = self.target.pos
+        target_position = self._target_location
     # Calcular la distancia en X con el objetivo
         direction_x = target_position[0] - guided_agent_position[0]
         direction_y = target_position[1] - guided_agent_position[1]
@@ -803,13 +803,14 @@ class BombermanEnv(gym.Env):
                                         return action
                         else: # Si es negativo o 0 se va a mover hacia arriba
                             move = guided_agent_position + np.array([0,-1]) # Se simula la acción hacia arriba
-                            if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
-                                move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe caja más arriba, el agente morirá
-                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
-                                    action = 3 # Se realiza la acción
-                                    self.previous_action = action # Se actualiza la acción previa
-                                    self.penultimate_action = 4 # Se actualiza la penultima acción
-                                    return action
+                            if not(exist(self.list_boxes_breakable, move)):
+                                if not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible arriba
+                                    move = move + np.array([0,-1]) # Se simula la acción siguiente, puesto que si existe caja más arriba, el agente morirá
+                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más arriba
+                                        action = 3 # Se realiza la acción
+                                        self.previous_action = action # Se actualiza la acción previa
+                                        self.penultimate_action = 4 # Se actualiza la penultima acción
+                                        return action
                                 else: # Si existe una caja rompible más arriba
                                     move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
                                     if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
@@ -851,13 +852,14 @@ class BombermanEnv(gym.Env):
                                             return action
                             else: # Si existe caja rompible arriba
                                 move = guided_agent_position + np.array([1,0]) # Se simula la acción hacia adelante
-                                if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
-                                    move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
-                                    if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
-                                        action = 0 # Se realiza la acción
-                                        self.previous_action = action # Se actualiza la acción previa
-                                        self.penultimate_action = 4 # Se actuliza la penultima acción
-                                        return action
+                                if not(exist(self.list_boxes_breakable, move)):
+                                    if not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible adelante
+                                        move = move + np.array([-1,0]) # Se simula la acción siguiente, puesto que si existe una caja más adelante, el agente morirá
+                                        if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible más adelante
+                                            action = 0 # Se realiza la acción
+                                            self.previous_action = action # Se actualiza la acción previa
+                                            self.penultimate_action = 4 # Se actuliza la penultima acción
+                                            return action
                                     else: # Si existe caja rompible más adelante
                                         move = guided_agent_position + np.array([0,1]) # Se simula la acción hacia abajo
                                         if not(exist(self.list_boxes_breakable, move)) and not(self.list_boxes_breakable[index(self.list_boxes_breakable, move)].isBroken == False): # Si no existe caja rompible abajo
@@ -2302,7 +2304,7 @@ class BombermanEnv(gym.Env):
 file_str = "cajas.txt"
 
 # Ejemplo de uso
-env = BombermanEnv(15,11,20,3,3,'','human')
+env = BombermanEnv(15,11,20,2,2,'','human')
 
 for episode in range(100):
 
