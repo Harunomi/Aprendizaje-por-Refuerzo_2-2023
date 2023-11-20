@@ -63,7 +63,7 @@ def exist(list,pos):
 
 
 class BombermanEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 1}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 3}
 
     def __init__(self, width, height, boxes, enemies_x, enemies_y, rompible_file, render_mode = None):
         super(BombermanEnv, self).__init__()
@@ -128,31 +128,26 @@ class BombermanEnv(gym.Env):
         # Inicializa el estado inicial de tu entorno
         #self.state = np.zeros((width, height), dtype=np.float32)
 
-    def total_states(self):
-        # Calcular el total de estados posibles
-        total_states_agent = np.prod(self.observation_space["agent"].shape)
-        print("Total de estados agent: {}".format(total_states_agent))
-        total_states_target = np.prod(self.observation_space["target"].shape)
-        print("Total de estados target: {}".format(total_states_target))
-        total_states_obstacles = 2**(self.width * self.height)  # 2 opciones por cada celda
-        print("Total de estados obstacles: {}".format(total_states_obstacles))
-        total_states_enemies = 2**((self.enemies_y + self.enemies_x) * 2)  # 2 opciones por cada coordenada x, y
-        print("Total de estados enemies: {}".format(total_states_enemies))
-        total_states_bomb = 2**(self.observation_space["bomb"].shape[0])  # 2 opciones por cada coordenada x, y
-        print("Total de estados bomb: {}".format(total_states_bomb))
+    def distance(self, pos1, pos2):
+        # buscamos la distancia entre el agente y un obstaculo
+        return np.sqrt((pos1[0] - pos2[0])**2 + (pos1[1] - pos2[1])**2)
+    
+    def find_closest_obstacle(self, agent_position):
+        """Encuentra la posición del obstáculo más cercano a la posición del agente."""
+        closest_obstacle = None
+        min_distance = float('inf')  # Inicializar con infinito para asegurar que cualquier distancia sea menor
 
-        
-        total_states = (
-            total_states_agent
-            * total_states_target
-            * total_states_obstacles
-            * total_states_enemies
-            * total_states_bomb
-        )
+        # Iterar sobre las cajas rompibles e irrompibles para encontrar la más cercana al agente
+        for box in self.list_boxes + self.list_boxes_breakable:
+            obstacle_position = box.pos
+            d = self.distance(agent_position, obstacle_position)
+            if d < min_distance:
+                min_distance = d
+                closest_obstacle = obstacle_position
 
-        print("Total de estados: {}".format(total_states))
+        return closest_obstacle
 
-        return total_states
+
     
 
     def _tile_is_free(self,direction):
@@ -162,12 +157,12 @@ class BombermanEnv(gym.Env):
         return True
 
     def _get_obs(self):
-        return {"agent": self._agent_location,
-                 "target": self._target_location,
-                 "boxes": self.list_boxes,
-                 "enemies": self.list_enemies,
-                 "bomb": self.bomb,
-                 "explosion": self.explosion_radius,}
+        agent_position = self._agent_location
+        closest_obstacle = self.find_closest_obstacle(agent_position)
+        bomb_position = self.bomb.pos if self.active_bomb == 1 else None
+
+        current_state = [agent_position,closest_obstacle,bomb_position]
+        return current_state
     
     def _get_info(self):
         return {
@@ -337,7 +332,7 @@ class BombermanEnv(gym.Env):
                     self.player_alive = False
                     observation = self._get_obs()
                     info = self._get_info()
-                    reward = -10
+                    reward = -100
                     terminated = 0
                     return observation, reward, terminated, True, info
 
@@ -414,6 +409,10 @@ class BombermanEnv(gym.Env):
             terminated = 1
             return observation, reward, terminated, True, info
 
+        # verificamos si la salida esta expuesta, de estarlo, la recompensa debiese tornarse negativa para que 
+        # agente no rompa todas las cajas antes de salirse
+        if (self.list_boxes[self._target_index].isBroken):
+            reward = -7
         return observation, reward, terminated, False, info
 
 

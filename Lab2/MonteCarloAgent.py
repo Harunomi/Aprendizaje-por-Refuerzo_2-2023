@@ -22,18 +22,30 @@ class MonteCarloAgent:
 
 
         # Q_table
-        self.Q = np.zeros([self.env.total_states(), self.env.action_space.n])
+        self.Q = {}
         
-        print(self.Q)
-
 
     def act(self, state):
-
-        max_indices = np.where(self.Q[state, :] == self.Q[state, :].max())[0]
-        action = rng.choice(max_indices)
+        # Convertir la lista a una tupla usando hash para hacerla hashable
+        state_key = hash(str(state))
+        
+        # Acceder al valor Q correspondiente al estado
+        q_values = self.Q.get(state_key, np.zeros(self.env.action_space.n))
+        action = np.argmax(q_values)
 
         if rng.uniform() < self.epsilon:
             action = rng.choice(self.env.action_space.n)
+        
+        action_to_names = {
+            0: 'RIGHT',
+            1: 'DOWN',
+            2: 'LEFT',
+            3: 'UP',
+            4: 'BOMB',
+            5: 'WAIT',
+        }
+
+        #print("Action: ", action_to_names[action])
         
         return action
     
@@ -44,15 +56,22 @@ class MonteCarloAgent:
         # iterate backwards over the episode
 
         for state, action, reward in reversed(episode):
+            
+            state_key = hash(str(state))
+
 
             return_episode = reward + self.gamma * return_episode
+            q_values = self.Q.get(state_key, np.zeros(self.env.action_space.n))
+            q_values[action] = q_values[action] + self.alpha * (return_episode - q_values[action])
+            self.Q[state_key] = q_values
 
-            self.Q[state, action] += self.alpha * (return_episode - self.Q[state, action])
 
     def train(self, nb_episode, recorder=False):
         ''''
         Runs the agent on the environment
         '''
+        returns = []
+        steps = []
 
         for episode in range(nb_episode):
             
@@ -69,7 +88,7 @@ class MonteCarloAgent:
                 action = self.act(state)
 
                 # step
-                next_state, reward, info = self.env.step(action)
+                next_state, reward,terminal, truncated, info = self.env.step(action)
 
                 # update
                 transition.append((state, action, reward))
@@ -87,4 +106,4 @@ class MonteCarloAgent:
             returns.append(return_episode)
             steps.append(nb_steps)
         
-        return returns, steps
+        return returns,steps
