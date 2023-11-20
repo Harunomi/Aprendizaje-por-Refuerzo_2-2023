@@ -236,24 +236,25 @@ class BombermanEnv(gym.Env):
 
 
         # Choose random position for the enemies in horizontal axis
-        i = 0
-        while i < self.enemies_x:
-            m = self.np_random.integers(0, self.width, dtype=int)
-            n = self.np_random.integers(0, self.height, dtype=int)
-            if not (exist(self.list_boxes,np.array([m,n])) or np.array_equal(self._agent_location,np.array([m,n])) or exist(self.list_enemies,np.array([m,n]))):
-                w = self.np_random.integers(0, 2, dtype=int) # 0: Up, 1: Down
-                self.list_enemies.append(Enemy(np.array([m,n]),0,w,True)) # 0 en orientation es horizontal
-                i+=1
-
-        i = 0
+        if self.enemies_x > 0:
+            i = 0
+            while i < self.enemies_x:
+                m = self.np_random.integers(0, self.width, dtype=int)
+                n = self.np_random.integers(0, self.height, dtype=int)
+                if not (exist(self.list_boxes,np.array([m,n])) or np.array_equal(self._agent_location,np.array([m,n])) or exist(self.list_enemies,np.array([m,n]))):
+                    w = self.np_random.integers(0, 2, dtype=int) # 0: Up, 1: Down
+                    self.list_enemies.append(Enemy(np.array([m,n]),0,w,True)) # 0 en orientation es horizontal
+                    i+=1
         # Choose random position for the enemies in vertical axis
-        while i < self.enemies_y:
-            o = self.np_random.integers(0, self.width, dtype=int)
-            p = self.np_random.integers(0, self.height, dtype=int)
-            if not (exist(self.list_boxes,np.array([o,p])) or np.array_equal(self._agent_location,np.array([o,p])) or exist(self.list_enemies,np.array([o,p]))):
-                w = self.np_random.integers(0, 2, dtype=int) # 0: Left, 1: Right
-                self.list_enemies.append(Enemy(np.array([o,p]),1,w,True)) # 1 en orientation es vertical
-                i+=1
+        if self.enemies_y > 0:
+            i = 0
+            while i < self.enemies_y:
+                o = self.np_random.integers(0, self.width, dtype=int)
+                p = self.np_random.integers(0, self.height, dtype=int)
+                if not (exist(self.list_boxes,np.array([o,p])) or np.array_equal(self._agent_location,np.array([o,p])) or exist(self.list_enemies,np.array([o,p]))):
+                    w = self.np_random.integers(0, 2, dtype=int) # 0: Left, 1: Right
+                    self.list_enemies.append(Enemy(np.array([o,p]),1,w,True)) # 1 en orientation es vertical
+                    i+=1
         observation = self._get_obs()
         info = self._get_info()
         
@@ -412,7 +413,7 @@ class BombermanEnv(gym.Env):
         # verificamos si la salida esta expuesta, de estarlo, la recompensa debiese tornarse negativa para que 
         # agente no rompa todas las cajas antes de salirse
         if (self.list_boxes[self._target_index].isBroken):
-            reward = -7
+            reward = -5
         return observation, reward, terminated, False, info
 
 
