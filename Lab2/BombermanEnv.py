@@ -236,7 +236,7 @@ class BombermanEnv(gym.Env):
 
 
         # Choose random position for the enemies in horizontal axis
-        if self.enemies_x > 0:
+        if (self.enemies_x > 0):
             i = 0
             while i < self.enemies_x:
                 m = self.np_random.integers(0, self.width, dtype=int)
@@ -246,7 +246,7 @@ class BombermanEnv(gym.Env):
                     self.list_enemies.append(Enemy(np.array([m,n]),0,w,True)) # 0 en orientation es horizontal
                     i+=1
         # Choose random position for the enemies in vertical axis
-        if self.enemies_y > 0:
+        if (self.enemies_y > 0):
             i = 0
             while i < self.enemies_y:
                 o = self.np_random.integers(0, self.width, dtype=int)
@@ -287,6 +287,7 @@ class BombermanEnv(gym.Env):
                 # verificamos si el agente esta en el radio de explosion
                 if (exist(self.explosion_radius,self._agent_location)):
                     self.player_alive = False
+                    print("Muerto\n")
                     observation = self._get_obs()
                     info = self._get_info()
                     reward = -100
@@ -398,7 +399,7 @@ class BombermanEnv(gym.Env):
             reward = 10
 
         
-        # An episode is done iff the agent has reached the target
+        # An episode is done if the agent has reached the target
         terminated = np.array_equal(self._agent_location, self._target_location)
         observation = self._get_obs()
         info = self._get_info()
