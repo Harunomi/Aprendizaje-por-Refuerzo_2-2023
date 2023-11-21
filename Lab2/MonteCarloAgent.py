@@ -74,7 +74,7 @@ class MonteCarloAgent:
         steps = []
 
         for episode in range(nb_episode):
-            
+            print("Episodio nº: ", episode)
             # reset
             state, info = self.env.reset()
             return_episode = 0.0
