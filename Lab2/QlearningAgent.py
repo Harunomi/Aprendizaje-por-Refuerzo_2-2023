@@ -1,3 +1,6 @@
+import numpy as np
+rng = np.random.default_rng()
+
 class QLearningAgent:
     """
     Q-learning agent.
@@ -62,7 +65,7 @@ class QLearningAgent:
         self.Q[state_key] = q_values
 
 
-    def train(self, nb_episodes, recorder=None):
+    def train(self, nb_episodes):
         "Runs the agent on the environment for nb_episodes. Returns the list of obtained returns."
 
         # Returns
@@ -90,7 +93,7 @@ class QLearningAgent:
                 next_state, reward, terminal, truncated, info = self.env.step(action)
 
                 # Learn from the transition
-                self.update(state, action, reward, next_state, done)
+                self.update(state, action, reward, next_state)
 
                 # Go in the next state
                 state = next_state
@@ -101,10 +104,6 @@ class QLearningAgent:
 
                 # End of the episode
                 done = terminal or truncated
-
-            # Record at the end of the episode
-            if recorder is not None and episode == nb_episodes -1:
-                recorder.record(self.env.render())
 
             # Store info
             returns.append(return_episode)
