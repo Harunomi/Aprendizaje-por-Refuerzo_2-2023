@@ -18,32 +18,48 @@ class QLearningAgent:
         self.alpha = alpha
 
         # Q_table
-        self.Q = np.zeros([self.env.observation_space.n, self.env.action_space.n])
+        self.Q = {}
 
     def act(self, state):
         "Returns an action using epsilon-greedy action selection."
+        state_key = hash(str(state))
 
-        action = rng.choice(np.where(self.Q[state, :] == self.Q[state, :].max())[0])
+        q_values = self.Q.get(state_key, np.zeros(self.env.action_space.n))
+        action = np.argmax(q_values)
 
         if rng.random() < self.epsilon:
             action = self.env.action_space.sample()
 
+        action_to_names = {
+            0: 'RIGHT',
+            1: 'DOWN',
+            2: 'LEFT',
+            3: 'UP',
+            4: 'BOMB',
+            5: 'WAIT',
+        }
+
+        #print("Action: ", action_to_names[action])
         return action
 
-    def update(self, state, action, reward, next_state, done):
-        "Updates the agent using a single transition."
+    def update(self, state, action, reward, next_state):
+        """
+        Update Q-values using the Q-learning update rule with Bellman target.
+        Q(s, a) = Q(s, a) + alpha * [reward + gamma * max(Q(s', a')) - Q(s, a)]
+        """
+        state_key = hash(str(state))
+        next_state_key = hash(str(next_state))
 
-        # Bellman target
-        target = reward
+        q_values = self.Q.get(state_key, np.zeros(self.env.action_space.n))
+        next_q_values = self.Q.get(next_state_key, np.zeros(self.env.action_space.n))
 
-        if not done:
-            target += self.gamma * self.Q[next_state, :].max()
+        max_next_q = np.max(next_q_values)
 
-        # Update the Q-value
-        self.Q[state, action] += self.alpha * (target - self.Q[state, action])
+        bellman_target = reward + self.gamma * max_next_q
 
-        # Decay epsilon
-        self.epsilon = self.epsilon * (1 - self.decay_epsilon)
+        q_values[action] = q_values[action] + self.alpha * (bellman_target - q_values[action])
+
+        self.Q[state_key] = q_values
 
 
     def train(self, nb_episodes, recorder=None):
@@ -96,3 +112,30 @@ class QLearningAgent:
 
 
         return returns, steps
+    
+    def test(self, recorder=None):
+        "Performs a test episode without exploration."
+        previous_epsilon = self.epsilon
+        self.epsilon = 0.0  # Desactivar la exploración durante la prueba
+
+        # Reset
+        state = self.env.reset()
+        done = False
+        nb_steps = 0
+        return_episode = 0
+
+        # Sample the episode
+        while not done:
+            action = self.act(state)  # Utilizar la estrategia epsilon-greedy sin exploración
+            next_state, reward, terminal, truncated, info = self.env.step(action)
+            return_episode += reward
+            state = next_state
+            nb_steps += 1
+            done = terminal or truncated
+
+        self.epsilon = previous_epsilon  # Restaurar el valor original de epsilon
+
+        if recorder is not None:
+            recorder.record(self.env.render())
+
+        return return_episode, nb_steps
