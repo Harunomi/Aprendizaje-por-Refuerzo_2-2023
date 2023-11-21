@@ -4,9 +4,9 @@ import MonteCarloAgent
 import matplotlib.pyplot as plt
 import os
 file_str = "/Users/luzmariaharistoyflores/Documents/Agustin/Aprendizaje-por-Refuerzo_2-2023/Lab2/cajas.txt" #"C:/Users/Harunomi/Desktop/Programas Pencas/Aprendizaje-por-Refuerzo_2-2023/Lab2/cajas.txt"
-env = BombermanEnv.BombermanEnv(15,15,30,14,14,file_str,'rgb_array')
+env = BombermanEnv.BombermanEnv(5,5,1,0,1,file_str,'rgb_array')
 
-agent = MonteCarloAgent.MonteCarloAgent(env, 1.0, 0.1, 0.4)
+agent = MonteCarloAgent.MonteCarloAgent(env, 0.9, 0.9, 0.5)
 
 returns, steps = agent.train(20000, recorder=True)
 
