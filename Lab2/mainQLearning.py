@@ -9,14 +9,14 @@ def running_average(x, N):
     cumsum = np.cumsum(np.insert(np.array(x), 0, 0))
     return (cumsum[N:] - cumsum[:-N]) / N
 
-file_str = "C:/Users/Harunomi/Desktop/Programas Pencas/Aprendizaje-por-Refuerzo_2-2023/Lab2/cajas.txt"
-env = BombermanEnv.BombermanEnv(5,5,1,1,1,file_str,'rgb_array')
+file_str = "C:/Users/Harunomi/Desktop/Programas Pencas/Aprendizaje-por-Refuerzo_2-2023/Lab2/cajas1.txt"
+env = BombermanEnv.BombermanEnv(8,8,16,7,7,file_str,'rgb_array')
 
 # Parameters
-gamma = 0.9
-epsilon = 1.0
-decay_epsilon = 1e-5
+gamma = 0.5
+epsilon = 4.5
 alpha = 0.1
+decay_epsilon = 0.99
 nb_episodes = 20000
 
 agent = Qlearning.QLearningAgent(env, gamma, epsilon, decay_epsilon, alpha)
