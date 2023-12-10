@@ -300,10 +300,9 @@ class BombermanEnv(gym.Env):
                 # verificamos si el agente esta en el radio de explosion
                 if (exist(self.explosion_radius,self._agent_location)):
                     self.player_alive = False
-                    print("Muerto\n")
                     observation = self._get_obs()
                     info = self._get_info()
-                    reward = -100
+                    reward = -10
                     terminated = 0
                     return observation, reward, terminated, True, info
                 
@@ -312,8 +311,9 @@ class BombermanEnv(gym.Env):
                     if (self.list_boxes[i].isBreakable):
                         if (exist(self.explosion_radius,self.list_boxes[i].pos)):
                             self.list_boxes[i].isBroken = True
-                            # faltaria cambiar la recompenza obtenida por romper una caja
                             reward += 7
+                            if (self.list_boxes[i].isTarget):
+                                reward += 20
 
                 # verificamos si los enemigos estan en el radio de explosion
                 for i in range(len(self.list_enemies)):
@@ -347,7 +347,7 @@ class BombermanEnv(gym.Env):
                     self.player_alive = False
                     observation = self._get_obs()
                     info = self._get_info()
-                    reward = -100
+                    reward = -10
                     terminated = 0
                     return observation, reward, terminated, True, info
 
@@ -409,7 +409,10 @@ class BombermanEnv(gym.Env):
             # no hay una bomba activa, por lo que se puede poner una
             self.active_bomb = 1
             self.bomb = Bomb(self._agent_location,6)
-            reward = 10
+            reward = 1
+            # si el target esta visible, debe dejar de ganar recomensa por colocar bombas
+            if (self.list_boxes[self._target_index].isBroken):
+                reward = 0
 
         
         # An episode is done if the agent has reached the target
@@ -421,13 +424,14 @@ class BombermanEnv(gym.Env):
             self._render_frame()
         if (np.array_equal(self._agent_location,self._target_location)):
             reward = 100
+            print('                 Ganaste\n')
             terminated = 1
             return observation, reward, terminated, True, info
 
         # verificamos si la salida esta expuesta, de estarlo, la recompensa debiese tornarse negativa para que 
         # agente no rompa todas las cajas antes de salirse
-        if (self.list_boxes[self._target_index].isBroken):
-            reward = -5
+        '''if (self.list_boxes[self._target_index].isBroken):
+            reward = -5'''
         return observation, reward, terminated, False, info
 
 

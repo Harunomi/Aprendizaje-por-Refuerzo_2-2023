@@ -8,7 +8,7 @@ def running_average(x, N):
     return np.convolve(x, kernel, mode='same')
 
 # Parameters
-nb_episodes = 150
+nb_episodes = 200
 batch_size = 32
 
 epsilon = 1.0
