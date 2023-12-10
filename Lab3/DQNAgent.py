@@ -8,6 +8,8 @@ import tensorflow as tf
 import logging
 import ReplayBuffer
 
+
+
 class DQNAgent:
 
     def __init__(self, env, learning_rate, epsilon, epsilon_decay, gamma, batch_size, target_update_period, training_update_period, buffer_limit):
@@ -23,54 +25,43 @@ class DQNAgent:
 
         # Create the Q-network and the target network
         tf.keras.backend.clear_session() # start by deleting all existing models to be gentle on the RAM
-        self.model = self.create_model(self.env, self.learning_rate)
-        self.target_model = self.create_model(self.env, self.learning_rate)
+        self.model = self.build_model(self.learning_rate)
+        self.target_model = self.build_model(self.learning_rate)
         self.target_model.set_weights(self.model.get_weights())
 
         # Create the replay memory
         self.buffer = ReplayBuffer.ReplayBuffer(buffer_limit)
 
-    def create_model(env, lr):
-        model = tf.keras.models.Sequential()
+    def build_model(self, learning_rate):
+        model = tf.keras.Sequential()
+        model.add(tf.keras.layers.Dense(64, input_shape=(self.env.observation_space.shape[0],), activation='relu'))
+        model.add(tf.keras.layers.Dense(self.env.action_space.n, activation='linear'))  # Utiliza env.action_space.n
 
-        # Cambia la forma de entrada a (None, 6) después de aplanar todas las entradas
-        model.add(tf.keras.layers.Flatten(input_shape=(3, 2)))
-
-        model.add(tf.keras.layers.Dense(64, activation='relu'))
-        model.add(tf.keras.layers.Dense(64, activation='relu'))
-        model.add(tf.keras.layers.Dense(env.action_space.n, activation='linear'))
-
-        model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
-
-        print(model.summary())
+        # Compila el modelo con el optimizador y la función de pérdida apropiados
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate), loss='mse')
 
         return model
 
-    def create_model(self, env, lr):
-        model = tf.keras.models.Sequential()
+    def act(self, state):
 
-        # Ajustar la forma de entrada
-        model.add(tf.keras.layers.Input(shape=(env.observation_space.shape[0],), name="flattened_state"))
+        # epsilon-greedy
+        if np.random.rand() < self.epsilon: # Random selection
+            action = self.env.action_space.sample()
+        else: # Use the Q-network to get the greedy action
+            action = self.model.predict(state.reshape((1, self.env.observation_space.shape[0])), verbose=0)[0].argmax()
 
-        model.add(tf.keras.layers.Dense(64, activation='relu'))
-        model.add(tf.keras.layers.Dense(64, activation='relu'))
-        model.add(tf.keras.layers.Dense(env.action_space.n, activation='linear'))
+        # Decay epsilon
+        self.epsilon *= 1 - self.epsilon_decay
+        self.epsilon = max(0.05, self.epsilon)
 
-        model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
+        return action
 
-        print(model.summary())
-
-        return model
-    
     def update(self, batch):
-        # Obtén la minibatch
+
+        # Get the minibatch
         states, actions, rewards, next_states, dones = batch
 
-        # Aplana los estados de la minibatch
-        states = states.reshape((-1, 6))
-
         # Predict the Q-values in the current state
-        print("               ESTADOS:",states)
         targets = np.array(self.model.predict_on_batch(states))
 
         # Predict the Q-values in the next state using the target model
@@ -87,7 +78,7 @@ class DQNAgent:
         history = self.model.fit(states, targets, epochs=1, batch_size=self.batch_size, verbose=0)
 
         return history.history['loss'][0]
-    
+
     def train(self, nb_episodes):
 
         steps = 0
@@ -117,7 +108,6 @@ class DQNAgent:
                 done = terminal or truncated
 
                 # Store the transition
-                print(state)
                 self.buffer.append(state, action, reward, next_state, done)
 
                 # Sample a minibatch
@@ -148,18 +138,17 @@ class DQNAgent:
             losses.append(np.mean(loss_episode))
 
             # Print info
-            if episode % 1000 == 0:
-                clear_output(wait=True)
-                print('Episode', episode+1)
-                print(' total steps:', steps)
-                print(' length of the episode:', steps_episode)
-                print(' return of the episode:', return_episode)
-                print(' current loss:', np.mean(loss_episode))
-                print(' epsilon:', self.epsilon)
+            clear_output(wait=True)
+            print('Episode', episode+1)
+            print(' total steps:', steps)
+            print(' length of the episode:', steps_episode)
+            print(' return of the episode:', return_episode)
+            print(' current loss:', np.mean(loss_episode))
+            print(' epsilon:', self.epsilon)
 
         return returns, losses
-    
-    def test(self, render=True):
+
+    def test(self):
 
         old_epsilon = self.epsilon
         self.epsilon = 0.0

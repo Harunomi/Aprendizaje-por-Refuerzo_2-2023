@@ -80,6 +80,9 @@ class BombermanEnv(gym.Env):
         self.enemies_x = enemies_x # total de enemigos horizontales
         self.enemies_y = enemies_y # total de enemigos verticales
         self.rompible_file = rompible_file # archivo de cajas irrompibles
+        self._agent_location = np.array([0,0])
+        self.active_bomb = 0
+        self.observation = self._get_obs()
         m = mult(self.width, self.height)
         if(self.width > self.height):
             self.window_height = 670
@@ -89,13 +92,7 @@ class BombermanEnv(gym.Env):
             self.window_height = m * self.window_width
             
         # Define la forma del espacio de observación (en este caso, una imagen binaria)
-        self.observation_space = spaces.Dict({
-            "agent": spaces.Box(low=0, high=1, shape=(2,), dtype=np.int32),
-            "target": spaces.Box(low=0, high=1, shape=(2,), dtype=np.int32),
-            "obstacles": spaces.MultiBinary(self.width * self.height),
-            "enemies": spaces.MultiBinary((enemies_x + enemies_y) * 2),  # x, y position for each enemy
-            "bomb": spaces.MultiBinary(2),  # x, y position of the bomb
-        })
+        self.observation_space = spaces.Box(low=0, high=1, shape=(len(self.observation),), dtype=np.float32)
 
         # Define el espacio de acción (puedes personalizar esto según tu entorno)
         self.action_space = spaces.Discrete(6)  # Ejemplo: acciones discretas 0, 1, 2, 3
@@ -159,10 +156,23 @@ class BombermanEnv(gym.Env):
     def _get_obs(self):
         agent_position = self._agent_location
         closest_obstacle = self.find_closest_obstacle(agent_position)
-        bomb_position = self.bomb.pos if self.active_bomb == 1 else np.array([-1,-1])
+        bomb_position = self.bomb.pos if self.active_bomb == 1 else np.array([0, 0])
 
-        current_state = np.array([agent_position,closest_obstacle,bomb_position])
-        return current_state
+        # Verificar si closest_obstacle no es None antes de aplanarlo
+        if closest_obstacle is not None:
+            closest_obstacle = closest_obstacle.flatten()
+        else:
+            # Si no hay obstáculo cercano, puedes proporcionar algún valor por defecto
+            closest_obstacle = np.zeros_like(agent_position)
+
+        # Aplana la información en un solo array
+        flattened_observation = np.concatenate((
+            agent_position.flatten(),
+            closest_obstacle.flatten(),
+            bomb_position.flatten()
+        ))
+
+        return np.array(flattened_observation)
     
     def _get_info(self):
         return {
@@ -217,14 +227,15 @@ class BombermanEnv(gym.Env):
         '''for i in range(len(self.list_boxes_breakable)):
             print(self.list_boxes_breakable[i].pos)'''
         # Choose the agent's location uniformly at random
-        aux = True
+        '''aux = True
         while (aux):
             x = self.np_random.integers(0, self.width, dtype=int)
             y = self.np_random.integers(0, self.height, dtype=int)
             if not (exist(self.list_boxes,np.array([x,y]))):
                 aux = False
                 self._agent_location = np.array([x,y])
-
+            '''
+        self._agent_location = np.array([2,2])
 
         # Choose target location between breakable boxes
         target_box = self.list_boxes_breakable[self.np_random.integers(0,len(self.list_boxes_breakable),dtype=int)]
@@ -236,7 +247,7 @@ class BombermanEnv(gym.Env):
 
 
         # Choose random position for the enemies in horizontal axis
-        if (self.enemies_x > 0):
+        '''if (self.enemies_x > 0):
             i = 0
             while i < self.enemies_x:
                 m = self.np_random.integers(0, self.width, dtype=int)
@@ -254,7 +265,9 @@ class BombermanEnv(gym.Env):
                 if not (exist(self.list_boxes,np.array([o,p])) or np.array_equal(self._agent_location,np.array([o,p])) or exist(self.list_enemies,np.array([o,p]))):
                     w = self.np_random.integers(0, 2, dtype=int) # 0: Left, 1: Right
                     self.list_enemies.append(Enemy(np.array([o,p]),1,w,True)) # 1 en orientation es vertical
-                    i+=1
+                    i+=1'''
+        enemigo_fijo = Enemy(np.array([4,4]),0,0,True)
+        self.list_enemies.append(enemigo_fijo)
         observation = self._get_obs()
         info = self._get_info()
         

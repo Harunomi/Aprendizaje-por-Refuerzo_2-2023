@@ -1,6 +1,11 @@
+from matplotlib import pyplot as plt
+import numpy as np
 import BombermanEnv
 import DQNAgent
 
+def running_average(x, N):
+    kernel = np.ones(N) / N
+    return np.convolve(x, kernel, mode='same')
 
 # Parameters
 nb_episodes = 150
