@@ -21,7 +21,7 @@ buffer_limit = 5000
 target_update_period = 100
 training_update_period = 4
 
-file_str = 'Lab3/cajas.txt'
+file_str = '/Users/luzmariaharistoyflores/Documents/Agustin/Aprendizaje-por-Refuerzo_2-2023/Lab3/cajas.txt'
 
 # Create the environment
 env = BombermanEnv.BombermanEnv(5,5,1,0,1,file_str,'rgb_array')
