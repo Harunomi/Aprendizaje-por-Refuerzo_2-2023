@@ -8,15 +8,15 @@ def running_average(x, N):
     return np.convolve(x, kernel, mode='same')
 
 # Parameters
-nb_episodes = 200
+nb_episodes = 300
 batch_size = 32
 
-epsilon = 1.0
+epsilon = 0.8
 epsilon_decay = 0.0005
 
-gamma = 0.99
+gamma = 0.9
 
-learning_rate = 0.005
+learning_rate = 0.01
 buffer_limit = 5000
 target_update_period = 100
 training_update_period = 4
